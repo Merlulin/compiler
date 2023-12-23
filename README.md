@@ -767,3 +767,251 @@ void statements(void) {
 ```
 
 可能第一次看会稍微疑惑，其实stmt.c中新增的gen*操作都是有关生成X86代码的打印操作，存放在cg.c文件当中，如果你熟悉了X86指令集，那么你可以自己去编写对应的输出内容。同时match函数用于匹配当前读取的关键字是否是与传入的token_id一致，如果一致则说明匹配正确，否则则说明这不是一个合法的以print开头的表达式。
+
+## 变量
+
+完成第五节也仅仅只是实现了对一个print表达式的编译，那么现在我们应该实现最基本的变量了。
+
+本节先简单实现单个int类型的变量，以及对int类型的变量进行赋值的操作。
+
+由此我们会多出一个关键字和一个符号：int 和 =, 因此必然我们先要在defs.h中为这两个符号定义token索引值。
+
+同时，我们现在对源代码扫描的时候，同样要对新增的int和=进行token值的赋值
+
+```c
+=======scan.c=======
+
+// 关键词匹配，匹配buf中读入的字符,返回关键字标记号，如果不是关键字则返回0
+static int keyword(char *s) {
+    switch (*s) {
+        case 'p':   // 如果识别的标识符是print函数名
+            if (!strcmp(s, "print"))
+                return (T_PRINT);
+            break;
+        case 'i':   // 如果识别的标识符是int变量
+            if (!strcmp(s, "int"))
+                return (T_INT);
+            break;
+    }
+    return (0);
+}
+
+// 扫描字符并将token加入到对应的结构中
+int scan(struct token *t) {
+    
+    int c, tokentype;
+    c = skip();
+
+    switch (c) {
+
+        ... 
+
+        case '=':
+            t->token = T_EQUALS;
+            break;
+        default:
+            // 如果是整数数字，需要扫描所有的字面值
+            if (isdigit(c)) {
+                t->intvalue = scanint(c);
+                t->token = T_INTLIT;
+                break;
+            } else if (isalpha(c) || '_' == c) {
+                scanident(c, Text, TEXTLEN);
+
+                // 如果是keyword中已知的关键字，返回标记
+                if (tokentype = keyword(Text)) {
+                    t->token = tokentype;
+                    break;
+                } 
+
+                // 如果不是关键词，那么返回标识符
+                t->token = T_IDENT;
+                break;
+            }
+            printf("Error: exits no recognize character %c at %d Line.\n", c, Line);
+            exit(1);
+    }
+    return (1);
+}
+```
+
+现在也可以正常的读入关键字，并且为对应的Token赋值了，但是现在每一行不再只由print开头了，所以在stmt.c中statements函数不能先去匹配print，而后直接根据表达式构建AST树。需要根据当前token的id来去执行对应的解释语句操作。
+
+```c
+
+void print_statement(void) {
+    struct ASTnode *tree;
+    int reg;
+    
+    match(T_PRINT, "print"); // 匹配首个print
+
+    tree = binexpr(0);
+    reg = genAST(tree, -1);
+    genprintint(reg);
+    genfreeregs();
+
+    semi();
+}
+
+
+// 解析语句
+void statements(void) {
+
+    while (1) {
+        switch (Token.token) {
+            case T_PRINT:   // 如果是打印语句
+                print_statement();
+                break;
+            case T_INT: // 如果是变量定义
+                var_declaration();
+                break;
+            case T_IDENT:   // 如果是赋值语句
+                assignment_statement();
+                break;
+            case T_EOF:
+                return;
+            default:
+                fatald("Error: Syntax error, token", Token.token);
+        }
+    }
+}
+```
+
+这里先给出print解释函数，会发现和之前的其实是一样的。
+
+那么如果是定义变量，var_declaration该怎么设计？我们需要注意，变量可以定义很多个，但是定义在哪里呢？堆栈？那不就是全局空间咯，所以需要在data.h中补充保存变量的全局空间。
+
+```c
+=======data.h=======
+extern_ struct symtable Gsym[NSYMBOLS]; // 定义全局的变量表
+
+=======defs.h=======
+#define NSYMBOLS 1024 // 变量表的条目数
+// 符号表
+struct symtable {
+  char *name; // 变量的名称
+};
+```
+
+此时在设计定义变量就简单了。我们只需要先检查首个标识是否是int， 然后检车后续的部分是否是一个标识符的名称。如果都满足则将这个变量加入到全局变量当中。
+
+```c
+=======decl.c=======
+// 解析变量的声明
+void var_declaration(void) {
+    match(T_INT, "int");
+    ident();  // 也是调用match匹配一下是否是标识符名称
+    addglob(Text);
+    genglobsym(Text);
+    semi();
+}
+
+=======sym.c=======
+// 管理符号表的文件
+
+static int Globs = 0;
+
+
+// 创建一个新的全局变量
+static int newglob(void) {
+    int p;
+
+    if ((p = Globs++) >= NSYMBOLS) {
+        fatal("Too many global symbols");
+    }
+    return (p);
+}
+
+// 如果查询的关键词在变量表里，返回在变量表中对应的索引
+int findglob(char *s) {
+    int i;
+    for(i = 0; i < Globs; i ++) {
+        if (*s == *Gsym[i].name && !strcmp(s, Gsym[i].name))
+            return (i);
+    }
+    return (-1);
+}
+
+// 将关键词添加到全局变量表中
+int addglob(char *name) {
+    int y;
+
+    // 如果要添加的符号已经在符号表中，则直接返回对应的token
+    if ((y = findglob(name)) != -1)
+        return (y);
+
+    y = newglob();
+    // 深度拷贝
+    Gsym[y].name = strdup(name);
+    return (y);
+}
+```
+此时变量也能正常加入到全局变量表中了，可以根据全局变量表来设计赋值操作了。
+
+```c
+=======stmt.c=======
+void assignment_statement(void) {
+    struct ASTnode *left, *right, *tree;
+    int id;
+
+    ident();    // 确认是否是变量名
+
+    // 检查变量的名字是否存在在变量表中
+    if ((id = findglob(Text)) == -1) {
+        fatals("Undeclared variable", Text);
+    }
+    // 为何左变成右了呢，因为我们是将右侧的表达式结果赋值给左侧的变量地址当中，ASTnode构建需要反过来，以在编译时满足X86的指令要求
+    right = mkastleaf(A_LVIDENT, id);
+
+    match(T_EQUALS, "=");   // 确保是否有一个等号
+    
+    // 解析后面的表达式
+    left = binexpr(0);
+
+    tree = mkastnode(A_ASSIGN, left, right, 0);
+
+    genAST(tree, -1);
+    genfreeregs();
+
+    semi();
+}
+```
+
+需要注意一点，现在由于ASTnode中不仅需要存整数值，同时有时需要存储变量在全局变量表中的索引，因此可以用union来修改，一次只有一个。
+
+```c
+=======defs.h=======
+// ASTree 结构
+struct ASTnode {
+    int op;	// 如果op是操作符token，那么有左右孩子，如果是INTLIT那么就没有左右孩子，只有intvalue值
+    struct ASTnode *left;			
+    struct ASTnode *right;
+    union {
+      int intvalue; // 对于A_INTLIT，是整数值
+      int id; // 对于A_IDENT,是指变量名的索引
+    }	v;
+};
+
+```
+当然对应的一些赋值操作也需要修改一下语法，自己回看代码找不同吧。
+
+## 比较和if-else语句
+
+我们想要实现一个条件分支语句，首先必然要先实现比较语句，那么最常用的比较符号就是：==、!=、<、<=、>、>=
+
+那么先在defs.h中定义这些token，但是现在符号边多了，我们为了便于后续的实现，我们可以将token的定义顺序按照优先级进行定义。
+
+```c
+// token 用枚举类实现,现在使用优先级的情况显示
+enum {
+  T_EOF,  
+  T_PLUS, T_MINUS, // + -
+  T_STAR, T_SLASH, // * /
+  T_EQ, T_NE, // == !=
+  T_LT, T_GT, T_LE, T_GE, // < > <= >=
+  T_INTLIT, T_SEMI, T_ASSIGN, T_IDENT,  // ; 赋值 定义变量
+  // Keywords
+  T_PRINT, T_INT
+};
+```
+
