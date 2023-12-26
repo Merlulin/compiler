@@ -87,6 +87,10 @@ static int scanident(int c, char *buf, int lim) {
 // 关键词匹配，匹配buf中读入的字符,返回关键字标记号，如果不是关键字则返回0
 static int keyword(char *s) {
     switch (*s) {
+        case 'e':   // 如果是else语句
+            if (!strcmp(s, "else"))
+                return (T_ELSE);
+            break;
         case 'p':   // 如果识别的标识符是print函数名
             if (!strcmp(s, "print"))
                 return (T_PRINT);
@@ -94,6 +98,8 @@ static int keyword(char *s) {
         case 'i':   // 如果识别的标识符是int变量
             if (!strcmp(s, "int"))
                 return (T_INT);
+            else if (!strcmp(s, "if"))
+                return (T_IF);
             break;
     }
     return (0);
@@ -123,6 +129,18 @@ int scan(struct token *t) {
             break;
         case ';':
             t->token = T_SEMI;
+            break;
+         case '{':
+            t->token = T_LBRACE;
+            break;
+        case '}':
+            t->token = T_RBRACE;
+            break;
+        case '(':
+            t->token = T_LPAREN;
+            break;
+        case ')':
+            t->token = T_RPAREN;
             break;
         case '=':
             if ((c = next()) == '=') {

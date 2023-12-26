@@ -2,22 +2,21 @@
 #include "data.h"
 #include "decl.h"
 
-void print_statement(void) {
+static struct ASTnode *print_statement(void) {
     struct ASTnode *tree;
     int reg;
     
     match(T_PRINT, "print"); // 匹配首个print
 
     tree = binexpr(0);
-    reg = genAST(tree, -1);
-    genprintint(reg);
-    genfreeregs();
-
+    // 直接将print作为一个AST树的做左子树，等待返回后与其他语句拼接
+    tree = mkastunary(A_PRINT, tree, 0);
     semi();
+    return (tree);
 }
 
 
-void assignment_statement(void) {
+static struct ASTnode *assignment_statement(void) {
     struct ASTnode *left, *right, *tree;
     int id;
 
@@ -35,32 +34,74 @@ void assignment_statement(void) {
     // 解析后面的表达式
     left = binexpr(0);
 
-    tree = mkastnode(A_ASSIGN, left, right, 0);
-
-    genAST(tree, -1);
-    genfreeregs();
+    tree = mkastnode(A_ASSIGN, left, NULL, right, 0);
 
     semi();
+    return (tree);
 }
 
-// 解析语句
-void statements(void) {
+
+struct ASTnode *if_statement(void) {
+    // 创建条件AST树、情况为真的AST树和为假的AST树
+    struct ASTnode *condAST, *trueAST, *falseAST = NULL;
+
+    // 匹配首个if关键字
+    match(T_IF, "if");
+    // 匹配左侧的(
+    lparen(); 
+
+    // 递归构造if语句条件表达式的AST树
+    condAST = binexpr(0);
+
+    if (condAST->op < A_EQ || condAST->op > A_GE)
+        fatal("Bad comparison operator");
+    rparen();
+
+    // if为真的ast树
+    trueAST = compound_statement();
+
+    if (Token.token == T_ELSE) {
+        scan(&Token);
+        falseAST = compound_statement();
+    }
+
+    return (mkastnode(A_IF, condAST, trueAST, falseAST, 0));
+}
+
+// 解析复合语句
+struct ASTnode *compound_statement(void) {
+    struct ASTnode *left = NULL;
+    struct ASTnode *tree;
+
+    lbrace(); // 识别左括号
 
     while (1) {
         switch (Token.token) {
             case T_PRINT:   // 如果是打印语句
-                print_statement();
+                tree = print_statement();
                 break;
             case T_INT: // 如果是变量定义
                 var_declaration();
+                tree = NULL;
                 break;
             case T_IDENT:   // 如果是赋值语句
-                assignment_statement();
+                tree = assignment_statement();
                 break;
-            case T_EOF:
-                return;
+            case T_IF:
+                tree = if_statement();
+                break;
+            case T_RBRACE:  // 识别右括号
+                rbrace(); 
+                return (left);
             default:
                 fatald("Error: Syntax error, token", Token.token);
+        }
+
+        if (tree) {
+            if (left == NULL)
+                left = tree;
+            else 
+                left = mkastnode(A_GLUE, left, NULL, tree, 0);  // 如果之前已经有了语句则直接做语句的拼接
         }
     }
 }

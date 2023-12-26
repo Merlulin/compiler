@@ -4,9 +4,25 @@
 
 // 杂项功能
 
+void lbrace(void) {
+  match(T_LBRACE, "{");
+}
+
+void rbrace(void) {
+  match(T_RBRACE, "}");
+}
+
+void lparen(void) {
+  match(T_LPAREN, "(");
+}
+
+void rparen(void) {
+  match(T_RPAREN, ")");
+}
+
 // 匹配分号，并捕捉下一个
 void semi(void) {
-    match(T_SEMI, ";");
+  match(T_SEMI, ";");
 }
 
 // token和字符串的类型是否匹配

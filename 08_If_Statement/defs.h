@@ -6,6 +6,7 @@
 
 #define TEXTLEN 512 // 输入的符号的长度上限
 #define NSYMBOLS 1024 // 符号表的条目数
+#define NOREG -1 // 标识没有使用寄存器
 
 
 // token 用枚举类实现,现在使用优先级的情况显示
@@ -16,8 +17,9 @@ enum {
   T_EQ, T_NE, // == !=
   T_LT, T_GT, T_LE, T_GE, // < > <= >=
   T_INTLIT, T_SEMI, T_ASSIGN, T_IDENT,  // ; 赋值 定义变量
+  T_LBRACE, T_RBRACE, T_LPAREN, T_RPAREN,
   // Keywords
-  T_PRINT, T_INT
+  T_PRINT, T_INT, T_IF, T_ELSE
 };
 
 struct token
@@ -31,13 +33,14 @@ enum {
   A_ADD=1, A_SUBTRACT, A_MULTIPLY, A_DIVIDE,
   A_EQ, A_NE, A_LT, A_GT, A_LE, A_GE,
   A_INTLIT,
-  A_IDENT, A_LVIDENT, A_ASSIGN
+  A_IDENT, A_LVIDENT, A_ASSIGN, A_PRINT, A_GLUE, A_IF
 };
 
 // ASTree 结构
 struct ASTnode {
     int op;	// 如果op是操作符token，那么有左右孩子，如果是INTLIT那么就没有左右孩子，只有intvalue值
     struct ASTnode *left;			
+    struct ASTnode *mid;
     struct ASTnode *right;
     union {
       int intvalue; // 对于A_INTLIT，是整数值
